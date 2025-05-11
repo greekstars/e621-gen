@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Send e621 Media to Discord</title>
+    <style>
+        /* Global Styles */
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #ff7f50, #ff1493, #8a2be2, #4169e1, #32cd32);
+            background-size: 400% 400%;
+            animation: gradientAnimation 10s ease infinite;
+            color: white;
+            text-align: center;
+        }
+
+        /* Animation for rainbow background */
+        @keyframes gradientAnimation {
+            0% {
+                background-position: 0% 50%;
+            }
+            50% {
+                background-position: 100% 50%;
+            }
+            100% {
+                background-position: 0% 50%;
+            }
+        }
+
+        h1 {
+            margin-top: 20px;
+            font-size: 2.5rem;
+            color: #fff;
+            font-weight: bold;
+        }
+
+        /* Logo Styles */
+        #logo {
+            max-width: 200px;
+            margin-top: 20px;
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        /* Input Fields */
+        input[type="text"] {
+            padding: 10px;
+            margin: 10px;
+            border: 2px solid #fff;
+            border-radius: 5px;
+            font-size: 1rem;
+            width: 50%;
+            max-width: 300px;
+            background-color: rgba(255, 255, 255, 0.2);
+            color: white;
+        }
+
+        /* Button */
+        button {
+            background-color: #32cd32;
+            color: white;
+            font-size: 1.2rem;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #228b22;
+        }
+
+        /* Container for input fields (webhook, keyword, and media type) */
+        .container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            margin-top: 40px;
+        }
+
+        /* Message section */
+        .message {
+            margin-top: 20px;
+            font-size: 1.2rem;
+        }
+
+        /* Radio buttons style */
+        .radio-group {
+            display: flex;
+            justify-content: center;
+            margin: 10px;
+        }
+
+        .radio-group label {
+            margin: 0 10px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Logo in the top middle -->
+    <img id="logo" src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/8b/E621_logo.svg/220px-E621_logo.svg.png" alt="Logo" />
+
+    <h1>e621 generator</h1>
+
+    <!-- Container for input fields (webhook, keyword, and media type) -->
+    <div class="container">
+        <label for="webhookInput">Enter Discord Webhook URL:</label>
+        <input type="text" id="webhookInput" placeholder="Enter Webhook URL" />
+        
+        <label for="keywordInput">Enter a keyword (e.g., "Male") or leave blank for random images:</label>
+        <input type="text" id="keywordInput" placeholder="Enter keyword" />
+        
+        <div class="radio-group">
+            <label>
+                <input type="radio" name="mediaType" value="gif"> GIFs
+            </label>
+            <label>
+                <input type="radio" name="mediaType" value="video"> Videos
+            </label>
+            <label>
+                <input type="radio" name="mediaType" value="image" checked> Images
+            </label>
+        </div>
+
+        <button id="sendMediaBtn">Send (20) </button>
+
+        <div class="message" id="statusMessage"></div>
+    </div>
+
+    <script>
+        // Set to track already sent media URLs
+        const sentMedia = new Set();
+
+        // Function to generate a random 7-digit number
+        function generateRandomId() {
+            return Math.floor(1000000 + Math.random() * 9000000); // Generates a random 7-digit number
+        }
+
+        // Function to fetch a post (with or without a keyword, and media type)
+        async function fetchMediaUrl(keyword, mediaType) {
+            let url;
+            if (keyword) {
+                // If keyword is provided, search for posts with that tag
+                url = `https://e621.net/posts.json?tags=${encodeURIComponent(keyword)}&limit=50&random=true`;
+            } else {
+                // If no keyword is provided, fetch random posts from e621
+                url = `https://e621.net/posts.json?limit=50&random=true`;
+            }
+
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                // Ensure the response contains posts
+                if (data.posts && data.posts.length > 0) {
+                    // Filter by media type
+                    const filteredPosts = data.posts.filter(post => {
+                        if (mediaType === 'gif') {
+                            return post.file.ext === 'gif';
+                        } else if (mediaType === 'video') {
+                            return post.file.ext === 'webm';
+                        } else {
+                            return post.file.ext === 'jpg' || post.file.ext === 'png';
+                        }
+                    });
+
+                    if (filteredPosts.length > 0) {
+                        // Return a random media URL from the filtered posts
+                        return filteredPosts[Math.floor(Math.random() * filteredPosts.length)].file.url;
+                    } else {
+                        throw new Error("No media found for selected type.");
+                    }
+                } else {
+                    throw new Error("No posts found.");
+                }
+            } catch (error) {
+                console.error("Error fetching media URL:", error);
+                return null;
+            }
+        }
+
+        function sendMediaToDiscord(mediaUrl, webhookUrl) {
+            // Prepare the payload to send to Discord via the webhook
+            const data = {
+                content: "Update Log: <https://codepen.io/mcb1001/details/yyBMBOJ> ",
+                embeds: [{
+                    image: { url: mediaUrl }
+                }]
+            };
+
+            fetch(webhookUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => {
+                if (response.ok) {
+                    console.log(`Successfully sent media: ${mediaUrl}`);
+                } else {
+                    console.error(`Failed to send media: ${mediaUrl}, Status Code: ${response.status}`);
+                }
+            })
+            .catch(error => {
+                console.error('Error sending media:', error);
+            });
+        }
+
+        async function sendMedia() {
+            const webhookUrl = document.getElementById('webhookInput').value.trim();
+            const keyword = document.getElementById('keywordInput').value.trim();
+            const mediaType = document.querySelector('input[name="mediaType"]:checked').value;
+            let mediaSent = 0;
+
+            if (!webhookUrl) {
+                document.getElementById('statusMessage').innerText = 'Please enter a valid webhook URL.';
+                return;
+            }
+
+            // Clear any previous status message
+            document.getElementById('statusMessage').innerText = '';
+
+            // Loop to generate and send 20 media (based on keyword or random)
+            while (mediaSent < 20) {
+                const mediaUrl = await fetchMediaUrl(keyword, mediaType);
+
+                // If we got a valid media URL and it's not already sent
+                if (mediaUrl && !sentMedia.has(mediaUrl)) {
+                    sendMediaToDiscord(mediaUrl, webhookUrl);
+                    sentMedia.add(mediaUrl); // Add the URL to the set of sent media
+                    mediaSent++;
+                } else {
+                    console.log("Skipping duplicate or invalid media.");
+                }
+            }
+
+            // Update the status message after sending media
+            document.getElementById('statusMessage').innerText = `Sent ${mediaSent} media to Discord!`;
+        }
+
+        // Add event listener to button
+        document.getElementById('sendMediaBtn').addEventListener('click', sendMedia);
+    </script>
+</body>
+</html>
